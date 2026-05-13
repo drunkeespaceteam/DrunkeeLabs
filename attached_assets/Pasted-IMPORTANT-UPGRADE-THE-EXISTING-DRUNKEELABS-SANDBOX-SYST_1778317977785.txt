@@ -1,0 +1,408 @@
+IMPORTANT: UPGRADE THE EXISTING DRUNKEELABS SANDBOX SYSTEM ONLY.
+
+DO NOT:
+- rewrite the platform
+- rebuild frontend/backend
+- change current workflow
+- remove existing features
+- replace architecture
+
+This is a production-grade SANDBOX STABILITY + PREVIEW RELIABILITY upgrade for the EXISTING system.
+
+Current Problems To Solve:
+- preview sometimes shows white screen
+- preview gets stuck on "building image"
+- multiple user previews conflict
+- container status becomes inconsistent
+- preview URL exists but iframe does not load
+- worker loops infinitely rebuilding same submission
+- preview disappears after container becomes healthy
+- DB update fails after container starts
+- text encoding issues show weird symbols like "ðŸš€"
+- mentor preview sometimes cannot access employee submission
+- containers sometimes cleanup too early
+- multiple submissions at same time are unstable
+- preview state differs between frontend/backend/redis/container
+- orphan containers remain running
+- preview reload sometimes opens blank page
+- race conditions occur when multiple previews run simultaneously
+
+GOAL:
+Make the sandbox system stable, scalable, isolated, and production-ready for many simultaneous users.
+
+========================================
+IMPLEMENT THESE UPGRADES
+========================================
+
+1. CENTRALIZED PREVIEW STATE MANAGER
+
+Create a centralized preview state system.
+
+Every submission must have ONE source of truth.
+
+States:
+- uploading
+- queued
+- extracting
+- building
+- starting
+- health_check
+- running
+- failed
+- stopped
+- expired
+- cleaning
+- failed_permanently
+
+Store state consistently in:
+- Redis
+- DB
+- in-memory registry
+
+Never allow mismatched states.
+
+========================================
+2. PREVENT INFINITE WORKER LOOPS
+========================================
+
+Fix BullMQ worker loop issue.
+
+Before processing:
+- check if submission already running
+- check active lock
+- check Redis processing key
+
+Prevent duplicate jobs for same submission.
+
+Add:
+- processing lock
+- timeout lock
+- dead-job cleanup
+
+If same submission already building/running:
+- skip duplicate execution
+
+Add restart_count protection:
+- max restart attempts = 3
+
+If exceeded:
+- mark failed_permanently
+
+========================================
+3. STABLE CONTAINER REGISTRY
+========================================
+
+Upgrade container registry.
+
+Track:
+- containerId
+- submissionId
+- taskId
+- userId
+- previewUrl
+- hostPort
+- startedAt
+- lastAccessed
+- state
+- heartbeat
+- restartCount
+
+Registry must survive preview reloads.
+
+Never overwrite existing active container accidentally.
+
+========================================
+4. PREVIEW HEARTBEAT SYSTEM
+========================================
+
+Add heartbeat monitoring.
+
+Every active preview updates:
+- lastAccessed
+- heartbeat timestamp
+
+Use:
+- iframe access
+- reload preview
+- logs access
+- mentor open preview
+
+Cleanup ONLY if inactive > configured timeout.
+
+DO NOT cleanup healthy active previews.
+
+========================================
+5. SAFE AUTO CLEANUP SYSTEM
+========================================
+
+Implement background cleanup worker.
+
+Rules:
+- cleanup only stopped/expired containers
+- never cleanup building/running containers
+- never cleanup active preview sessions
+
+Add:
+- orphan detection
+- zombie container cleanup
+- unused image pruning
+- temp ZIP cleanup
+
+Cleanup interval:
+- every 5 minutes
+
+========================================
+6. PREVIEW PROXY STABILITY
+========================================
+
+Upgrade preview proxy system.
+
+Requirements:
+- preview URLs must persist
+- iframe reload must reconnect
+- reload preview button must reuse existing running container
+- prevent blank iframe state
+
+Add:
+- proxy timeout handling
+- retry mechanism
+- preview reconnect logic
+- automatic iframe refresh after healthy state
+
+========================================
+7. FIX DB UPDATE FAILURE AFTER HEALTH CHECK
+========================================
+
+Current issue:
+Container becomes healthy but DB update fails.
+
+Implement transactional preview update flow.
+
+Flow:
+1. container healthy
+2. validate preview URL
+3. update DB
+4. update Redis
+5. update registry
+6. notify frontend
+
+If DB update fails:
+- DO NOT destroy healthy container
+- retry DB update
+- keep preview accessible
+
+========================================
+8. UTF-8 NORMALIZATION
+========================================
+
+Fix corrupted text rendering.
+
+After ZIP extraction:
+- normalize UTF-8 encoding
+- sanitize invalid characters
+- ensure HTML charset UTF-8
+- preserve original code safely
+
+Fix weird symbols like:
+- ðŸš€
+- âœ…
+- broken Unicode text
+
+========================================
+9. MULTI-USER SANDBOX ISOLATION
+========================================
+
+Support multiple simultaneous users safely.
+
+Each submission must have:
+- isolated container
+- isolated port
+- isolated temp folder
+- isolated network alias
+- isolated logs
+- isolated Redis keys
+
+Never allow one user preview to affect another.
+
+========================================
+10. SANDBOX RESOURCE MANAGEMENT
+========================================
+
+Add strict limits:
+
+Container:
+- CPU limit
+- memory limit
+- PidsLimit
+- readonly filesystem
+- writable tmpfs only:
+  /tmp
+  /app/.vite
+  /app/.next
+
+Prevent runaway containers.
+
+========================================
+11. PREVIEW HEALTH VALIDATION
+========================================
+
+Health checks must verify:
+- HTTP response
+- HTML actually rendered
+- not blank page
+- iframe accessible
+- proxy reachable
+
+Do NOT mark preview running until validation passes.
+
+========================================
+12. FRONTEND PREVIEW RECOVERY
+========================================
+
+Upgrade preview UI.
+
+Add:
+- reconnect preview button
+- auto retry
+- timeout detection
+- loading states
+- preview health badge
+- preview recovery flow
+
+If preview temporarily unavailable:
+- attempt reconnect automatically
+
+========================================
+13. LIVE LOG STREAMING
+========================================
+
+Improve terminal logs.
+
+Requirements:
+- realtime streaming
+- persistent logs
+- build logs separated from runtime logs
+- reconnect safe
+- prevent duplicate logs
+
+========================================
+14. SECURE ZIP STORAGE FLOW
+========================================
+
+Ensure uploaded ZIP remains immutable.
+
+Mentor preview must:
+- use stored ZIP snapshot only
+- never allow employee mutation after upload
+- rebuild from immutable storage copy
+
+Add:
+- checksum verification
+- upload integrity validation
+
+========================================
+15. SAFE DOWNLOAD FLOW
+========================================
+
+Fix empty ZIP download issue.
+
+Requirements:
+- verify file exists
+- verify upload completed
+- verify storage integrity
+- stream ZIP safely
+- fetch blob download
+- preserve original uploaded file
+
+Never return empty ZIPs.
+
+========================================
+16. CONTAINER RECOVERY SYSTEM
+========================================
+
+If preview crashes:
+- auto restart once
+- restore preview URL
+- preserve logs
+- update state correctly
+
+Do NOT enter restart loop.
+
+========================================
+17. REDIS SYNCHRONIZATION
+========================================
+
+Redis must track:
+- active preview
+- container port
+- status
+- locks
+- heartbeat
+- preview URL
+- cleanup metadata
+
+Frontend and backend must use Redis as runtime source of truth.
+
+========================================
+18. PRODUCTION-GRADE ERROR HANDLING
+========================================
+
+Add structured error handling everywhere.
+
+Never silently fail.
+
+Add:
+- retry wrappers
+- timeout handling
+- cleanup on partial failure
+- detailed logs
+- submission-specific error tracking
+
+========================================
+19. FORGOT PASSWORD SYSTEM
+========================================
+
+Build complete forgot/reset password flow using Supabase Auth.
+
+Create:
+- /forgot-password
+- /reset-password
+
+Requirements:
+- email reset link
+- secure password update
+- token validation
+- success/error states
+- dark UI matching existing design
+
+========================================
+20. DO NOT BREAK EXISTING SYSTEM
+========================================
+
+Preserve:
+- existing UI
+- existing APIs
+- existing routes
+- existing Docker architecture
+- existing task flow
+- existing escrow flow
+- existing auth system
+- existing mentor/employee workflow
+
+Only upgrade stability, isolation, reliability, and scalability.
+
+========================================
+FINAL GOAL
+========================================
+
+The system must reliably:
+- run many simultaneous user previews
+- support mentor live preview
+- support employee live preview
+- survive reloads/reconnects
+- prevent infinite worker loops
+- prevent orphan containers
+- keep previews stable
+- preserve uploaded ZIP integrity
+- safely cleanup inactive resources
+- scale like a production coding platform

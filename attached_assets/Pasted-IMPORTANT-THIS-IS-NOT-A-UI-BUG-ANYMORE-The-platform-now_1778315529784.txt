@@ -1,0 +1,435 @@
+IMPORTANT: THIS IS NOT A UI BUG ANYMORE.
+
+The platform now needs a REAL production-grade execution engine.
+
+Current issues:
+
+* white preview screens
+* uploads stuck on "Uploading ZIP..."
+* some users work, others fail
+* concurrent users cause instability
+* state synchronization becomes inconsistent
+* preview reliability is weak under multiple executions
+
+The current architecture partially works,
+but it is not yet production-scalable.
+
+DO NOT rewrite the platform.
+
+DO NOT remove existing features.
+
+DO NOT rebuild frontend/backend architecture.
+
+Upgrade the EXISTING execution pipeline into a stable multi-user production execution system.
+
+========================================
+PRIMARY GOAL
+============
+
+The platform must support:
+
+* many users uploading simultaneously
+* isolated sandbox execution
+* reliable preview delivery
+* stable queue orchestration
+* deterministic execution lifecycle
+* persistent preview routing
+* automatic recovery
+* no white screens
+* no stuck states
+
+========================================
+CORE PROBLEM
+============
+
+Current system likely suffers from:
+
+* race conditions
+* memory-only state
+* stale registry state
+* inconsistent queue lifecycle
+* frontend polling conflicts
+* cleanup timing issues
+* shared mutable state
+* preview proxy instability
+* execution ownership desync
+
+The execution system must become:
+STATE-DRIVEN and EVENT-DRIVEN.
+
+========================================
+IMPLEMENT THESE PRODUCTION UPGRADES
+===================================
+
+##################################################
+
+1. CENTRALIZED EXECUTION STATE MANAGER
+   ##################################################
+
+Create:
+server/executionStateManager.js
+
+This becomes SINGLE SOURCE OF TRUTH.
+
+It manages:
+
+* build_status
+* execution_status
+* preview_url
+* container_id
+* host_port
+* restart_count
+* last_accessed
+* preview_rebuilding
+
+ALL updates go through this manager.
+
+DO NOT update execution state from scattered files.
+
+##################################################
+2. REMOVE MEMORY-ONLY REGISTRY DEPENDENCY
+##################################################
+
+Current registry becomes stale.
+
+Persist active execution state in:
+
+* Redis
+* DB
+
+Memory registry becomes CACHE ONLY.
+
+If registry missing:
+recover from Redis automatically.
+
+##################################################
+3. PER-SUBMISSION EXECUTION LOCK
+##################################################
+
+Prevent race conditions.
+
+Before processing submission:
+
+Acquire Redis lock:
+
+lock:submission:{submissionId}
+
+Prevent:
+
+* duplicate builds
+* multiple containers
+* overlapping rebuilds
+* concurrent worker corruption
+
+Release lock only after:
+
+* DB update complete
+* preview URL persisted
+
+##################################################
+4. REAL EXECUTION STATE MACHINE
+##################################################
+
+Implement deterministic states:
+
+uploaded
+queued
+extracting
+validating
+building
+starting
+health_check
+running
+failed
+expired
+stopped
+cleanup
+
+Transitions MUST be controlled.
+
+Prevent illegal transitions like:
+running -> building
+
+##################################################
+5. QUEUE ISOLATION
+##################################################
+
+Split BullMQ queues:
+
+sandbox-build-queue
+sandbox-cleanup-queue
+sandbox-preview-queue
+
+Do NOT mix all jobs into one queue.
+
+##################################################
+6. CONCURRENT EXECUTION SUPPORT
+##################################################
+
+Add configurable concurrency.
+
+Worker should support:
+
+* multiple simultaneous builds
+* isolated execution contexts
+
+Use:
+concurrency based on CPU count
+
+BUT:
+one active build per submission.
+
+##################################################
+7. PREVIEW ROUTING LAYER
+##################################################
+
+Create:
+server/previewRouter.js
+
+Centralize preview proxy logic.
+
+Responsibilities:
+
+* stable iframe routing
+* proxy retries
+* encoding safety
+* websocket forwarding
+* Vite/HMR support
+* timeout handling
+
+##################################################
+8. FIX WHITE SCREEN ROOT CAUSE
+##################################################
+
+White screen likely caused by:
+
+* stale iframe URL
+* proxy timeout
+* HMR websocket break
+* container route mismatch
+* build finished before frontend refresh
+
+Fix by:
+
+* automatic iframe refresh
+* websocket proxy support
+* persistent preview session
+
+##################################################
+9. PERSISTENT PREVIEW SESSIONS
+##################################################
+
+When preview becomes healthy:
+
+Persist:
+preview_session_id
+
+Mentor/frontend reconnects to SAME session.
+
+Do NOT create new preview on every reload.
+
+##################################################
+10. ACTIVE PREVIEW HEARTBEAT
+##################################################
+
+Every preview request:
+update:
+last_accessed
+
+Cleanup worker must NEVER stop active previews.
+
+##################################################
+11. SMART CLEANUP SYSTEM
+##################################################
+
+Cleanup ONLY when:
+
+* inactive timeout exceeded
+* no active viewers
+* status != running
+
+Add graceful shutdown.
+
+##################################################
+12. BUILD OUTPUT STREAMING
+##################################################
+
+Stream logs via websocket or SSE.
+
+Frontend receives:
+
+* real-time build state
+* container logs
+* health status
+* preview readiness
+
+No stale polling-only system.
+
+##################################################
+13. PREVIEW HEALTH MONITOR
+##################################################
+
+Add periodic health checks.
+
+If preview unhealthy:
+
+* auto-recover container
+* restore routing
+* update execution state
+
+##################################################
+14. PROXY WEBSOCKET SUPPORT
+##################################################
+
+Vite apps require websocket forwarding.
+
+Ensure proxy supports:
+upgrade websocket requests
+
+Without this:
+white screens and HMR failures happen.
+
+##################################################
+15. PREVIEW URL STABILITY
+##################################################
+
+Never regenerate preview URLs randomly.
+
+Preview URL must remain stable during session.
+
+##################################################
+16. ISOLATED EXECUTION WORKSPACES
+##################################################
+
+Each submission gets isolated:
+
+/tmp/executions/{submissionId}
+
+Prevent shared temp conflicts.
+
+##################################################
+17. RESOURCE MANAGEMENT
+##################################################
+
+Add:
+
+* CPU limits
+* memory limits
+* build timeout
+* execution timeout
+* port collision prevention
+
+##################################################
+18. FAILED EXECUTION RECOVERY
+##################################################
+
+If execution crashes:
+
+* mark failed cleanly
+* cleanup resources
+* allow retry safely
+
+No zombie state.
+
+##################################################
+19. PREVIEW READY CONFIRMATION
+##################################################
+
+Do NOT mark running until:
+
+* container healthy
+* proxy reachable
+* iframe endpoint accessible
+* websocket upgrade successful
+
+##################################################
+20. FRONTEND EXECUTION UI
+##################################################
+
+Frontend must reflect REAL states:
+
+Uploading ZIP
+Extracting files
+Validating project
+Building container
+Starting runtime
+Checking health
+Preview ready
+
+Not generic:
+"Compiling project environment..."
+
+##################################################
+21. PREVENT STALE FRONTEND CACHE
+##################################################
+
+Force preview iframe refresh using:
+cache-busting query params
+
+Prevent stale blank previews.
+
+##################################################
+22. MULTI-USER STRESS STABILITY
+##################################################
+
+System must handle:
+
+* many uploads simultaneously
+* many previews simultaneously
+* many mentor sessions simultaneously
+
+WITHOUT:
+
+* preview collisions
+* stale states
+* queue duplication
+* shared containers
+
+##################################################
+23. REDIS EXECUTION RECOVERY
+##################################################
+
+On server restart:
+recover active execution state from Redis.
+
+Do NOT lose previews after restart.
+
+##################################################
+24. OBSERVABILITY
+##################################################
+
+Add structured logs:
+
+submissionId
+userId
+containerId
+queueState
+previewState
+proxyState
+
+Track entire lifecycle.
+
+##################################################
+25. PRODUCTION RELIABILITY TARGET
+##################################################
+
+Goal:
+Every uploaded ZIP:
+
+* builds reliably
+* receives isolated container
+* gets stable preview
+* survives reload
+* supports mentor viewing
+* supports concurrent users
+* auto-recovers from failures
+
+WITHOUT:
+
+* white screens
+* stuck loading
+* stale states
+* duplicate builds
+* broken previews
+* queue storms
+* orphan containers

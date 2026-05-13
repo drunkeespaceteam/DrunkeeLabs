@@ -1,0 +1,81 @@
+# Nexus Sandbox: Startup Workflow Guide
+
+This guide outlines the steps required to start the production-grade, queue-based sandbox execution platform.
+
+## Architecture Overview
+The system is decoupled for horizontal scaling:
+1.  **Redis**: Orchestrates the job queue (BullMQ) and log streaming (Pub/Sub).
+2.  **API Server**: Handles web requests and WebSocket connections.
+3.  **Worker Server**: Executes heavy Docker builds and manages container lifecycles.
+4.  **Frontend**: React application for the user interface.
+
+---
+
+## 1. Prerequisites
+- **Docker Desktop**: Must be running.
+- **Node.js**: v18+ recommended.
+
+---
+
+## 2. Step-by-Step Startup
+
+### Step 1: Start Redis
+The job queue requires a Redis instance. If you don't have one running, use Docker:
+```bash
+docker run -d --name redis-sandbox -p 6379:6379 redis:alpine
+```
+
+### Step 2: Database Migration
+Ensure your Supabase database has the required columns for billing and abuse protection. Run this in your **Supabase SQL Editor**:
+```sql
+-- 1. Create usage_logs table
+CREATE TABLE IF NOT EXISTS usage_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES auth.users(id),
+  submission_id UUID REFERENCES submissions(id),
+  execution_time_seconds INTEGER,
+  cost DECIMAL(10, 2),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 2. Add security column to users
+ALTER TABLE users ADD COLUMN IF NOT EXISTS is_flagged BOOLEAN DEFAULT FALSE;
+```
+
+### Step 3: Start the API Server
+This process handles uploads and streams logs to the UI.
+```bash
+# From the project root
+node server/index.js
+```
+*Expected Output: `🚀 Nexus Production-Grade Server running on http://localhost:3001`*
+
+### Step 4: Start the Execution Worker
+This process handles the actual Docker execution. It can run on a separate server if needed.
+```bash
+# From the project root (in a new terminal)
+node server/worker.js
+```
+*Expected Output: `[Worker] Sandbox Execution Worker starting...`*
+
+### Step 5: Start the Frontend
+```bash
+# From the project root (in a new terminal)
+npm run dev
+```
+
+---
+
+## 3. Workflow Verification
+1.  **Upload**: Select a project ZIP in the UI.
+2.  **Queue**: You will see the status change to **"Waiting in Queue"** (Indigo badge).
+3.  **Build**: The worker will pick up the job, and you will see **real-time logs** streaming in the Build Logs panel.
+4.  **Preview**: Once the health check passes, the **"Live Preview"** badge will appear, and the iframe will load directly from the container.
+5.  **Billing**: Check the `usage_logs` table in Supabase after a session ends to see the tracked execution time and cost.
+
+
+START REDIS:
+docker run -d --name redis --restart unless-stopped -p 6379:6379 redis:alpine
+
+STOP REDIS:
+docker stop redis

@@ -1,0 +1,276 @@
+CRITICAL FIX REQUIRED:
+Mentor download still fails with:
+"No files found in final snapshot"
+
+ROOT CAUSE:
+System is still trying to read submission source code from:
+server/tmp/submissions/
+
+This is incorrect because:
+
+* temp folders are runtime-only
+* temp folders get cleaned up
+* previews are temporary
+* mentor downloads must use permanent storage
+
+====================================================
+ABSOLUTE REQUIREMENT
+====================
+
+STOP using:
+server/tmp/submissions/
+
+for mentor downloads.
+
+Mentor downloads must ONLY use:
+
+* Supabase Storage
+* permanent ZIP snapshots
+* database snapshot URLs
+
+====================================================
+FIX THE ENTIRE SNAPSHOT FLOW
+============================
+
+CURRENT BROKEN FLOW:
+
+upload
+→ extract
+→ preview works
+→ cleanup temp folder
+→ mentor download fails
+
+====================================================
+NEW REQUIRED FLOW
+=================
+
+upload
+→ extract
+→ docker run
+→ create permanent ZIP snapshot
+→ upload ZIP to Supabase
+→ save ZIP URL to database
+→ cleanup temp folder
+
+====================================================
+STEP 1 — INSTALL REQUIRED PACKAGE
+=================================
+
+Install:
+npm install archiver
+
+====================================================
+STEP 2 — CREATE SNAPSHOT DIRECTORY
+==================================
+
+Create:
+server/snapshots/
+
+This stores generated ZIPs before upload.
+
+====================================================
+STEP 3 — CREATE ZIP SNAPSHOT
+============================
+
+Inside worker.js:
+
+AFTER successful preview creation:
+
+Call:
+createSubmissionSnapshot(submissionId, extractedPath)
+
+The function must:
+
+* ZIP the extracted project folder
+* generate:
+  server/snapshots/{submissionId}.zip
+* return zipPath
+
+====================================================
+STEP 4 — UPLOAD ZIP TO SUPABASE
+===============================
+
+Create bucket:
+submission-zips
+
+Upload:
+{submissionId}.zip
+
+IMPORTANT:
+Use upsert: true
+
+====================================================
+STEP 5 — SAVE DATABASE RECORD
+=============================
+
+Update submissions table:
+
+SET:
+
+* source_zip_url
+* snapshot_status = 'saved'
+
+IMPORTANT:
+This database value becomes the ONLY source of truth.
+
+====================================================
+STEP 6 — DOWNLOAD API
+=====================
+
+Create API route:
+
+GET /api/submissions/:id/download
+
+Flow:
+
+1. Query submissions table
+2. Read source_zip_url
+3. Return URL
+
+DO NOT:
+
+* read temp folders
+* read local files
+* read runtime directories
+
+====================================================
+STEP 7 — FRONTEND FIX
+=====================
+
+Download button must:
+
+fetch:
+GET /api/submissions/:id/download
+
+Then:
+window.open(downloadUrl)
+
+DO NOT:
+
+* fetch from temp folders
+* fetch local paths
+* fetch runtime directories
+
+====================================================
+STEP 8 — CLEANUP FIX
+====================
+
+Cleanup worker must NEVER delete:
+
+* uploaded ZIP snapshots
+* Supabase storage files
+* winner source archives
+
+Cleanup worker may ONLY delete:
+
+* extracted temp folders
+* stopped containers
+* expired previews
+
+====================================================
+STEP 9 — ADD DEBUG LOGS
+=======================
+
+Add logs:
+
+[SNAPSHOT] Creating ZIP
+[SNAPSHOT] ZIP created
+[SNAPSHOT] Uploading to Supabase
+[SNAPSHOT] Upload success
+[SNAPSHOT] Database updated
+[SNAPSHOT] Mentor download ready
+
+====================================================
+STEP 10 — VERIFY SUCCESS
+========================
+
+After submission:
+Supabase bucket MUST contain:
+
+submission-zips/
+{submissionId}.zip
+
+Database MUST contain:
+source_zip_url
+
+If source_zip_url is NULL:
+mentor download must show:
+"Snapshot generation failed"
+
+====================================================
+IMPORTANT
+=========
+
+Preview system and download system are separate systems.
+
+Preview:
+
+* temporary
+* runtime-based
+* Redis/container based
+
+Download:
+
+* permanent
+* storage-based
+* database-based
+
+Mentor downloads must NEVER depend on:
+
+* active Docker containers
+* Redis mappings
+* temp folders
+* preview URLs
+
+====================================================
+VITE WEBSOCKET FIX
+==================
+
+Fix Vite websocket spam:
+
+vite.config.js
+
+server: {
+host: "0.0.0.0",
+hmr: {
+overlay: false,
+clientPort: 5000,
+},
+watch: {
+ignored: [
+"**/server/tmp/**",
+"**/server/snapshots/**"
+]
+}
+}
+
+This prevents Vite from trying to hot-reload:
+
+* sandbox temp folders
+* generated previews
+* snapshot ZIPs
+
+====================================================
+EXPECTED FINAL RESULT
+=====================
+
+Employee submits:
+
+* preview works
+* snapshot ZIP saved permanently
+* mentor can download forever
+* winner source preserved permanently
+
+Download must continue working even if:
+
+* Docker container stops
+* Redis resets
+* worker restarts
+* temp folders deleted
+* preview expires
+
+System should behave like:
+
+* GitHub artifact storage
+* Replit export system
+* CodeSandbox snapshots

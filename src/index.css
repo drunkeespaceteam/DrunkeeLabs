@@ -1,0 +1,15 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  .glass-card {
+    @apply bg-white/40 backdrop-blur-md border border-white/60 shadow-[0_8px_32px_rgba(0,0,0,0.05)];
+  }
+  .glass-card-subtle {
+    @apply bg-white/30 backdrop-blur-sm border border-white/40 shadow-sm;
+  }
+  .btn-gradient {
+    @apply bg-gradient-to-r from-ice-500 to-ice-600 hover:from-ice-400 hover:to-ice-500 shadow-md shadow-ice-500/20 border border-ice-400/30 transition-all;
+  }
+}

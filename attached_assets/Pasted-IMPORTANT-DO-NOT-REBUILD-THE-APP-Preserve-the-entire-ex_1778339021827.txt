@@ -1,0 +1,243 @@
+IMPORTANT: DO NOT REBUILD THE APP.
+
+Preserve the entire existing DrunkeeLabs architecture and workflow.
+
+This is ONLY a Redis infrastructure setup + BullMQ stabilization task.
+
+Current goal:
+Connect the EXISTING BullMQ queue system to Upstash Redis using the provided REDIS_URL so the deployed Replit app and local worker can communicate reliably.
+
+DO NOT:
+
+* rewrite frontend
+* replace BullMQ
+* change task workflow
+* rebuild queue architecture
+* remove Docker logic
+* remove worker system
+
+========================================
+GOAL
+====
+
+Configure the EXISTING system to use Upstash Redis securely and correctly for:
+
+* BullMQ queues
+* worker communication
+* submission processing
+* sandbox lifecycle
+* preview synchronization
+
+The queue system must work between:
+
+* Replit deployment
+* local worker
+* Docker sandbox execution
+
+========================================
+REDIS CONFIGURATION
+===================
+
+Use environment variable:
+
+REDIS_URL
+
+Example format:
+
+rediss://default:PASSWORD@HOST:6379
+
+IMPORTANT:
+This is a secure TLS Redis connection.
+
+========================================
+IMPLEMENT THESE CHANGES
+=======================
+
+1. CREATE CENTRALIZED REDIS CLIENT
+
+Create:
+server/redisClient.js
+
+Requirements:
+
+* single reusable Redis connection
+* secure Upstash TLS support
+* shared by BullMQ + app
+
+Implementation requirements:
+
+Use:
+
+* ioredis
+* REDIS_URL from environment
+* tls: {}
+
+Add:
+
+* reconnect handling
+* error logging
+* connection success logs
+
+========================================
+2. CONFIGURE BULLMQ TO USE REDIS_URL
+====================================
+
+Update ALL BullMQ queues and workers.
+
+Replace:
+
+* localhost Redis
+* hardcoded host/port
+* local Redis assumptions
+
+Use centralized Redis client everywhere.
+
+Ensure:
+
+* Queue
+* Worker
+* QueueEvents
+* QueueScheduler
+
+all use SAME connection.
+
+========================================
+3. SUPPORT SECURE TLS REDIS
+===========================
+
+Upstash requires secure TLS.
+
+Redis initialization MUST support:
+
+tls: {}
+
+Prevent:
+
+* ECONNREFUSED
+* TLS handshake failures
+* maxRetriesPerRequest issues
+
+========================================
+4. FIX WORKER CONNECTION STABILITY
+==================================
+
+Worker must:
+
+* reconnect automatically
+* survive temporary disconnects
+* log connection state clearly
+
+Add logs:
+
+* Redis connected
+* Redis reconnecting
+* Worker connected
+* Queue active
+
+========================================
+5. REMOVE LOCAL REDIS ASSUMPTIONS
+=================================
+
+Search entire project for:
+
+* localhost:6379
+* REDIS_HOST
+* REDIS_PORT
+
+Replace with:
+process.env.REDIS_URL
+
+========================================
+6. ADD REDIS HEALTH CHECK
+=========================
+
+Create:
+GET /health/redis
+
+Return:
+
+* Redis connection state
+* ping latency
+* queue status
+
+========================================
+7. FIX BULLMQ STALLED JOBS
+==========================
+
+Configure BullMQ properly for cloud Redis.
+
+Add:
+
+* stalledInterval
+* lockDuration
+* removeOnComplete
+* removeOnFail
+
+Prevent:
+
+* infinite retries
+* ghost jobs
+* stuck queues
+
+========================================
+8. SUPPORT HYBRID ARCHITECTURE
+==============================
+
+System architecture must support:
+
+Replit Deployment
+↓
+Upstash Redis
+↓
+Local Worker + Docker Desktop
+
+This allows:
+
+* deployed frontend/backend
+* local sandbox execution
+* public testing
+* real Docker previews
+
+========================================
+9. ADD SAFE STARTUP VALIDATION
+==============================
+
+On server startup:
+
+* verify Redis connection
+* ping Redis
+* fail gracefully if unavailable
+
+Do NOT silently continue with broken queue.
+
+========================================
+10. PRESERVE EXISTING FEATURES
+==============================
+
+Keep intact:
+
+* current frontend
+* current APIs
+* current BullMQ workflow
+* current sandbox architecture
+* current Docker system
+* current upload flow
+* current mentor/employee workflow
+
+ONLY upgrade Redis connectivity and queue reliability.
+
+========================================
+EXPECTED RESULT
+===============
+
+After implementation:
+
+* Replit deployment connects to Upstash Redis
+* local worker connects to same Redis
+* BullMQ jobs process correctly
+* uploads leave "waiting for worker"
+* queue system stable
+* worker receives jobs from deployed app
+* mentor preview workflow functions
+* sandbox execution orchestration works
+* no Redis connection failures

@@ -1,0 +1,234 @@
+FIX CRITICAL ISSUE:
+Mentor cannot download winner source code because submission snapshots are not being permanently saved before sandbox cleanup.
+
+CURRENT ISSUE:
+Preview works correctly using Redis + proxy routing, but mentor download shows:
+"No files found in final snapshot"
+
+CAUSE:
+Temporary extracted project folders are being deleted before creating a permanent ZIP snapshot and uploading it to Supabase Storage.
+
+====================================================
+REQUIRED FIX
+============
+
+Implement a permanent submission snapshot system.
+
+NEW FLOW:
+
+1. Employee uploads ZIP
+2. Extract ZIP
+3. Build Docker container
+4. Start preview container
+5. Generate preview URL
+6. CREATE SNAPSHOT ZIP
+7. Upload snapshot ZIP to Supabase Storage
+8. Save ZIP URL in database
+9. THEN cleanup temporary folders
+
+IMPORTANT:
+Mentor downloads must NEVER depend on:
+
+* temporary folders
+* active containers
+* local worker filesystem
+
+Mentor downloads must ONLY use:
+
+* Supabase permanent storage
+* database snapshot URL
+
+====================================================
+INSTALL REQUIRED PACKAGE
+========================
+
+Install:
+npm install archiver
+
+====================================================
+SUPABASE STORAGE
+================
+
+Create storage bucket:
+submission-zips
+
+This bucket stores permanent project ZIP snapshots.
+
+====================================================
+DATABASE FIX
+============
+
+Update submissions table.
+
+Add columns:
+
+* source_zip_url TEXT
+* snapshot_status TEXT DEFAULT 'pending'
+
+====================================================
+WORKER.JS FIX
+=============
+
+Inside worker.js:
+
+AFTER successful container build and preview generation:
+Create a permanent ZIP snapshot of the extracted project.
+
+DO NOT cleanup temp folders before snapshot upload succeeds.
+
+====================================================
+REQUIRED SNAPSHOT FUNCTION
+==========================
+
+Create:
+createSubmissionSnapshot(submissionId, projectPath)
+
+Function requirements:
+
+* create ZIP from extracted project folder
+* store ZIP in /snapshots
+* filename:
+  {submissionId}.zip
+* return zipPath
+
+Use archiver package.
+
+====================================================
+UPLOAD SNAPSHOT TO SUPABASE
+===========================
+
+After ZIP creation:
+
+1. Read ZIP buffer
+2. Upload to Supabase Storage:
+   submission-zips/{submissionId}.zip
+3. Generate public URL
+4. Save URL in submissions table
+
+====================================================
+IMPORTANT
+=========
+
+Cleanup MUST happen ONLY AFTER:
+
+* ZIP creation succeeds
+* Supabase upload succeeds
+* database update succeeds
+
+====================================================
+WRONG FLOW
+==========
+
+extract
+→ docker run
+→ cleanup
+→ snapshot missing
+
+====================================================
+CORRECT FLOW
+============
+
+extract
+→ docker run
+→ create ZIP snapshot
+→ upload snapshot
+→ save DB URL
+→ cleanup temp folders
+
+====================================================
+DOWNLOAD API
+============
+
+Create API route:
+
+GET /api/submissions/:id/download
+
+Flow:
+
+1. Fetch submission from database
+2. Read source_zip_url
+3. Return download URL
+
+If no snapshot:
+return 404
+
+====================================================
+MENTOR DOWNLOAD FIX
+===================
+
+Download button must NOT:
+
+* read local worker files
+* read temporary folders
+* depend on active container
+
+Instead:
+mentor
+→ backend API
+→ Supabase ZIP URL
+→ direct download
+
+====================================================
+WINNER SNAPSHOT RULE
+====================
+
+Winner submissions must NEVER be deleted.
+
+When mentor confirms winner:
+
+* lock snapshot
+* preserve ZIP permanently
+* keep source download forever
+* prevent cleanup worker from deleting snapshot
+
+====================================================
+CLEANUP WORKER FIX
+==================
+
+Cleanup worker should only remove:
+
+* expired containers
+* expired previews
+* temporary extracted folders
+
+DO NOT DELETE:
+
+* winner ZIP snapshots
+* submission ZIPs
+* finalized source archives
+
+====================================================
+DEBUGGING REQUIREMENTS
+======================
+
+Add logs:
+
+[SNAPSHOT] Creating ZIP...
+[SNAPSHOT] Uploading to Supabase...
+[SNAPSHOT] Saved successfully
+[SNAPSHOT] DB updated
+
+====================================================
+EXPECTED FINAL RESULT
+=====================
+
+Employee submits project:
+
+* preview works
+* ZIP snapshot permanently saved
+* mentor can download anytime
+* winner code preserved forever
+* download still works after:
+
+  * worker restart
+  * container cleanup
+  * preview expiration
+  * Redis reset
+
+System should behave like:
+
+* Replit artifact storage
+* GitHub Actions artifacts
+* CodeSandbox project exports
+
+Permanent storage must be independent from active Docker containers.

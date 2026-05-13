@@ -1,0 +1,106 @@
+Fix the sandbox preview system issue where some employee submissions show the platform UI instead of the uploaded project preview.
+
+Current behavior:
+- Employee 1 submission works correctly and shows uploaded Vite app.
+- Employee 2 submission only shows the default NexusDev sandbox UI/static fallback.
+- Containers are healthy and worker is running.
+- Queue processing works.
+- The issue happens inconsistently between submissions.
+
+I need you to fully debug and fix the preview routing + runtime detection system.
+
+Required fixes:
+
+1. Fix preview URL mapping
+- Ensure every submissionId maps to its own active container port.
+- Do not reuse stale ports from Redis or memory cache.
+- Always update preview_url after container becomes healthy.
+- Validate preview URL before returning to frontend.
+
+2. Fix fallback UI issue
+- Currently the system falls back to the static NexusDev UI when preview routing fails.
+- Instead:
+  - show actual container output
+  - OR show proper error logs
+  - never silently fall back to platform UI.
+
+3. Add submission-specific container registry
+Create a registry like:
+{
+  submissionId,
+  containerId,
+  hostPort,
+  runtime,
+  status,
+  previewUrl,
+  lastHeartbeat
+}
+
+Persist it in Redis.
+
+4. Fix race conditions
+- Multiple uploads from different employees should never overwrite each other.
+- Ensure isolated preview sessions.
+- Use submissionId-scoped Redis keys.
+- Remove any global currentPreview/currentPort variables.
+
+5. Improve preview proxy
+- Verify proxy correctly forwards:
+  /preview/:submissionId/*
+- Forward websocket connections for Vite HMR.
+- Handle both static and Vite runtimes.
+
+6. Add runtime validation
+When container becomes healthy:
+- perform actual HTTP fetch to:
+  http://localhost:${hostPort}
+- verify status 200
+- verify HTML response exists
+- only then mark preview ready.
+
+7. Add detailed logs
+Add logs for:
+- preview lookup
+- redis lookup
+- registry lookup
+- selected port
+- proxy forwarding target
+- runtime detection
+- fallback reason
+
+8. Prevent stale preview state
+- Automatically cleanup dead containers.
+- Remove invalid Redis mappings.
+- Detect orphaned previews.
+
+9. Add retry system
+If preview fails:
+- retry proxy lookup 3 times
+- retry health check
+- retry registry sync
+
+10. Frontend improvements
+- Show actual preview loading state.
+- Show “Container starting”
+- Show “Container healthy”
+- Show “Connecting preview”
+- Show real error messages instead of blank/static screen.
+
+11. Critical requirement
+The system must support:
+- multiple employees
+- multiple simultaneous submissions
+- multiple running containers
+- independent previews
+without collisions.
+
+12. Add final verification
+After fixes:
+- upload 2 different Vite apps
+- ensure both previews display independently
+- ensure refresh works
+- ensure preview survives reload
+- ensure mentor view and employee view both work.
+
+Do not use any hardcoded port/global state/static fallback UI anymore.
+Use Redis + submission-scoped registry as source of truth.

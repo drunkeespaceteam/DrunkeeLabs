@@ -1,0 +1,90 @@
+modules = ["nodejs-20", "web"]
+[agent]
+expertMode = true
+stack = "BEST_EFFORT_FALLBACK"
+
+[nix]
+channel = "stable-25_05"
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Start application"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Backend Server"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Sandbox Worker"
+
+[[workflows.workflow]]
+name = "Start application"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "npm run dev"
+waitForPort = 5000
+
+[workflows.workflow.metadata]
+outputType = "webview"
+
+[[workflows.workflow]]
+name = "Backend Server"
+author = "agent"
+
+[workflows.workflow.metadata]
+outputType = "console"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "redis-server --daemonize yes --logfile /tmp/redis.log; node server/index.js"
+waitForPort = 3001
+
+[[workflows.workflow]]
+name = "Sandbox Worker"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "node server/worker.js"
+
+[workflows.workflow.metadata]
+outputType = "console"
+
+[[ports]]
+localPort = 3001
+externalPort = 3001
+
+[[ports]]
+localPort = 5000
+externalPort = 80
+
+[[ports]]
+localPort = 5001
+externalPort = 3003
+
+[[ports]]
+localPort = 6379
+externalPort = 3002
+
+[deployment]
+deploymentTarget = "vm"
+run = ["bash", "-c", "redis-server --daemonize yes --logfile /tmp/redis.log && node server/index.js & npm run build && npx serve -s dist -l 5000"]
+build = ["npm", "run", "build"]
+
+[userenv]
+
+[userenv.shared]
+VITE_SUPABASE_URL = "https://rogvbbzxzwawrqqvifnr.supabase.co"
+VITE_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJvZ3ZiYnp4endhd3JxcXZpZm5yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczOTEyMTksImV4cCI6MjA5Mjk2NzIxOX0.TE2jCkspLaUwBtM1J4Sio2ydlzt6zLUvXIVepQ98lyo"
+SUPABASE_URL = "https://rogvbbzxzwawrqqvifnr.supabase.co"

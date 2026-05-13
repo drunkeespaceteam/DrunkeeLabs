@@ -1,0 +1,240 @@
+IMPORTANT: FIX THE EXISTING WINDOWS DOCKER CONNECTION ISSUE INSIDE THE CURRENT DRUNKEELABS CODEBASE.
+
+DO NOT:
+- rebuild the platform
+- change architecture
+- rewrite sandbox system
+- remove Docker support
+- break existing workflow
+
+This is a targeted infrastructure fix.
+
+========================================
+CURRENT ISSUE
+========================================
+
+Sandbox uploads fail with:
+
+connect ENOENT /var/run/docker.sock
+
+Containers are created in Docker Desktop but remain stuck in "created" state instead of "running".
+
+Worker loops repeatedly rebuild submissions because backend loses Docker connection.
+
+This happens because the backend currently assumes Linux Docker socket:
+
+/var/run/docker.sock
+
+But the system is running on WINDOWS Docker Desktop.
+
+Windows requires:
+
+//./pipe/docker_engine
+
+========================================
+GOAL
+========================================
+
+Make Docker connection fully cross-platform:
+- Windows
+- Linux
+- macOS
+- Replit/Linux environments
+
+Ensure:
+- containers actually start
+- previews work
+- mentor preview works
+- employee preview works
+- worker stops looping
+- Docker daemon connectivity is validated before execution
+
+========================================
+IMPLEMENT THESE FIXES
+========================================
+
+1. FIND ALL DOCKER INITIALIZATION CODE
+
+Search entire backend for:
+- new Docker(...)
+- socketPath
+- dockerode initialization
+
+Possible files:
+- server/sandbox.js
+- server/docker.js
+- server/containerManager.js
+- worker.js
+
+========================================
+2. IMPLEMENT CROSS-PLATFORM DOCKER CONNECTION
+========================================
+
+Replace hardcoded:
+
+socketPath: "/var/run/docker.sock"
+
+with platform-aware logic:
+
+- Windows:
+  //./pipe/docker_engine
+
+- Linux/macOS:
+  /var/run/docker.sock
+
+Implementation example:
+
+const docker =
+  process.platform === "win32"
+    ? new Docker({
+        socketPath: "//./pipe/docker_engine"
+      })
+    : new Docker({
+        socketPath: "/var/run/docker.sock"
+      });
+
+Export and reuse centralized Docker client everywhere.
+
+========================================
+3. CREATE CENTRALIZED DOCKER CLIENT
+========================================
+
+Create:
+server/dockerClient.js
+
+Requirements:
+- single shared Docker instance
+- platform-aware socket handling
+- reusable across backend
+- no duplicate Docker connections
+
+========================================
+4. ADD DOCKER HEALTH VALIDATION
+========================================
+
+Before ANY container operation:
+- build
+- create
+- start
+- logs
+- inspect
+- cleanup
+
+Run:
+
+await docker.ping()
+
+If ping fails:
+- return clean error
+- stop worker retry loop
+- update submission state properly
+
+========================================
+5. FIX INFINITE WORKER LOOPS
+========================================
+
+Current issue:
+Worker endlessly retries failed submissions.
+
+Add protections:
+- max retry count
+- processing locks
+- failed_permanently state
+
+If Docker unreachable:
+- stop retry loop
+- mark submission failed
+- preserve logs
+
+========================================
+6. FIX CONTAINER STATE TRACKING
+========================================
+
+Currently containers remain:
+"created"
+
+instead of:
+"running"
+
+Implement proper startup flow:
+1. build image
+2. create container
+3. start container
+4. inspect running state
+5. run health check
+6. update DB
+7. update Redis
+8. notify frontend
+
+Do not mark preview ready until container actually running.
+
+========================================
+7. IMPROVE ERROR LOGGING
+========================================
+
+Add structured logs for:
+- docker connection failures
+- container startup failures
+- image build failures
+- health check failures
+
+Include:
+- submissionId
+- containerId
+- hostPort
+- platform
+- socketPath
+
+========================================
+8. FIX PREVIEW STABILITY
+========================================
+
+After Docker fix:
+- preview iframe must load correctly
+- mentor preview must work
+- employee preview must work
+- preview reload must reconnect to running container
+- no white screen
+
+========================================
+9. ADD SAFE CLEANUP
+========================================
+
+On failed startup:
+- remove failed containers
+- remove orphan containers
+- release ports
+- preserve logs
+
+DO NOT cleanup healthy running previews.
+
+========================================
+10. PRESERVE EXISTING FEATURES
+========================================
+
+Keep intact:
+- current task workflow
+- current upload flow
+- current mentor system
+- current preview architecture
+- current BullMQ queue
+- current frontend UI
+- current Redis usage
+- current Supabase integration
+
+ONLY fix Docker connectivity + preview stability.
+
+========================================
+FINAL RESULT REQUIRED
+========================================
+
+After fix:
+- uploads compile successfully
+- containers become RUNNING
+- previews open correctly
+- mentor preview works
+- employee preview works
+- no more ENOENT /var/run/docker.sock
+- no more infinite rebuild loops
+- Windows Docker Desktop fully supported
+- Linux/Replit compatibility preserved
